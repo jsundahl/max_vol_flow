@@ -51,7 +51,7 @@ def flow_test(volumetric_rate, temp, length):
         M109 S{temp} 
 
         ; movement to absolute
-        M82
+        G90
         ; move right above build plate
         ; TODO: make movement xy depend on rate? to avoid conflicts
         G1 Z5 F300
@@ -62,7 +62,7 @@ def flow_test(volumetric_rate, temp, length):
         ; Wait for 1 second to collect background noise
         G4 P1000
 
-        ; movement to relative
+        ; extruder movement to relative
         M83
         ; Extrude at rate X for time t while moving up 5mm
         ; TODO: will I get better measurements with a different or no z speed?
@@ -78,7 +78,6 @@ def flow_test(volumetric_rate, temp, length):
         G1 Z10 F300
         """
  
-    print(cmd)
     _run_gcode(cmd)
 
     return accel_filename
@@ -155,9 +154,17 @@ def process():
 
 
 def main():
-    file_path = flow_test(20, 215, 50)
-    print(f"Accelerometer data saved to {file_path}")
-    # _run_gcode("M109 S0")
+    # home, move extruder carriage to back left
+    # _run_gcode("G28\nG90\nG1 X15 Y200 F2000")
+    _run_gcode("G90\nG1 X15 Y200 F2000")
+    for flow in (5, 5, 5, 20, 20, 20):
+        file_path = flow_test(flow, 215, 50)
+        print(f"Accelerometer data saved to {file_path}")
+        # move right 10mm
+        _run_gcode("G91\nG1 X10 F2000\nG90")
+
+    # stop heating extruder
+    _run_gcode("M109 S0")
     # TODO: generate a test matrix and move over by 10mm each time
     return
 
