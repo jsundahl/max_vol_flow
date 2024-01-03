@@ -1,8 +1,10 @@
 import csv
 import datetime
 
+import matplotlib.pyplot as plt
 import numpy as np 
 import requests
+import scipy.signal
 
 
 class GCodeError(Exception):
@@ -82,78 +84,42 @@ def flow_test(volumetric_rate, temp, length):
 
     return accel_filename
 
-def process():
-    # Constants
-    sampling_rate = 3125  # Hz
-    window_size = 256  # Size of each FFT window
-    overlap = window_size // 2  # 50% overlap
-    bg_noise_duration = 1  # Duration of background noise data in seconds
-
-    # Read CSV data
-    with open(file_path, 'r') as csvfile:
-        csv_reader = csv.reader(csvfile)
-        next(csv_reader)  # Skip header
-        data = [row[1:] for row in csv_reader if not row[0].startswith('#')]  # Extract data, skip comments
-
-    # Transpose and convert to NumPy array
-    data_array = np.array(data, dtype=float).T
-
-    # Calculate number of samples for the noise period
-    noise_samples = sampling_rate * bg_noise_duration
-
-    # Define a Hanning window
-    window = np.hanning(window_size)
-
-    # Function to calculate STFT using NumPy
-    def stft(data, window, step):
-        # Number of windows
-        num_windows = (len(data) - window_size) // step + 1
-        
-        # Initialize the STFT matrix
-        stft_matrix = np.empty((num_windows, window_size), dtype=np.complex_)
-        
-        # Calculate STFT
-        for i in range(num_windows):
-            start = i * step
-            end = start + window_size
-            windowed_data = data[start:end] * window
-            stft_matrix[i, :] = np.fft.fft(windowed_data)
-        
-        # Return the frequency bins and the STFT matrix
-        freq_bins = np.fft.fftfreq(window_size, d=1/sampling_rate)
-        return freq_bins, stft_matrix
-
-    # TODO: check that we're not double skipping the timestamp
-    for axis_data in data_array[1:]:
-        # Calculate STFT for noise and signal
-        _, noise_stft = stft(axis_data[:noise_samples], window, overlap)
-        freq_bins, signal_stft = stft(axis_data, window, overlap)
-        
-        # Calculate average noise spectrum and subtract from signal
-        avg_noise_spectrum = np.mean(np.abs(noise_stft), axis=0)
-        signal_stft_magnitude = np.abs(signal_stft) - avg_noise_spectrum[None, :]
-        
-        # Clip negative values to zero
-        signal_stft_magnitude = np.clip(signal_stft_magnitude, a_min=0, a_max=None)
-        
-        # Optional: Save or process the resulting magnitude spectrogram data
-        # ...
-
-    # The 'signal_stft_magnitude' variable now holds the magnitude spectrogram with background noise subtracted.
-
-    # TODO: check the gcode script is good.
-    # then hardcode the path to the file in flow_test
-    # then start checking the fft stuff
-    # if that looks good then write data to csv and sftp and plot it
-    # TODO: there's for sure going to be a discrepancy between this and your
-    # in-practice max flow since you can reach a peak for a short time and
-    # be fine, but you couldn't sustain say 18mm^3/s for more than 1 second.
-    # this might be able to be picked up by a slicer to really know the limits
-    # of max flow. There's also probably an equation that we're fitting to for
-    # this and if I can figure out what it is then it will be cash money.
+# TODO: there's for sure going to be a discrepancy between this and your
+# in-practice max flow since you can reach a peak for a short time and
+# be fine, but you couldn't sustain say 18mm^3/s for more than 1 second.
+# this might be able to be picked up by a slicer to really know the limits
+# of max flow. There's also probably an equation that we're fitting to for
+# this and if I can figure out what it is then it will be cash money.
 
 
-def main():
+def generate_spectrogram(file_path):
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+
+    def normalize_data(Sxx):
+        Sxx_min = np.min(Sxx)
+        Sxx_max = np.max(Sxx)
+        return (Sxx - Sxx_min) / (Sxx_max - Sxx_min)
+
+    data = np.genfromtxt(file_path, delimiter=',', skip_header=1)
+    fs = 3125
+    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+    mmcubed = file_path.split('-')[-1][:-8]
+
+    for idx, axis in enumerate(['X', 'Y', 'Z']):
+        frequencies, times, Sxx = scipy.signal.spectrogram(data[:, idx + 1], fs)
+        Sxx = normalize_data(Sxx)
+        Sxx = sigmoid(Sxx * 10)
+        axs[idx].pcolormesh(times, frequencies, Sxx, shading='gouraud')
+        axs[idx].set_ylabel('Frequency [Hz]')
+        axs[idx].set_title(f"{axis}-axis at {mmcubed} mm^3/s")
+
+    plt.xlabel('Time [sec]')
+    fig.colorbar(axs[0].collections[0], ax=axs, orientation='vertical', label='Intensity [dB]')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+def runtest():
     # home, move extruder carriage to back left
     # _run_gcode("G28\nG90\nG1 X15 Y200 F2000")
     _run_gcode("G90\nG1 X15 Y200 F2000")
@@ -165,8 +131,33 @@ def main():
 
     # stop heating extruder
     _run_gcode("M109 S0")
-    # TODO: generate a test matrix and move over by 10mm each time
     return
 
+
+def process_stuff():
+    files = """
+    adxl345-2024-01-02-17-00-29-5mm3s.csv
+    adxl345-2024-01-02-17-01-26-5mm3s.csv
+    adxl345-2024-01-02-17-02-04-5mm3s.csv
+    adxl345-2024-01-02-18-21-41-10mm3s.csv
+    adxl345-2024-01-02-18-22-48-10mm3s.csv
+    adxl345-2024-01-02-18-23-13-10mm3s.csv
+    adxl345-2024-01-02-18-25-03-11mm3s.csv
+    adxl345-2024-01-02-18-25-46-12mm3s.csv
+    adxl345-2024-01-02-18-26-09-13mm3s.csv
+    adxl345-2024-01-02-18-26-31-14mm3s.csv
+    adxl345-2024-01-02-18-26-52-15mm3s.csv
+    adxl345-2024-01-02-18-27-13-16mm3s.csv
+    adxl345-2024-01-02-18-27-33-17mm3s.csv
+    adxl345-2024-01-02-18-27-53-18mm3s.csv
+    adxl345-2024-01-02-18-28-12-19mm3s.csv
+    adxl345-2024-01-02-17-02-40-20mm3s.csv
+    adxl345-2024-01-02-17-02-59-20mm3s.csv
+    adxl345-2024-01-02-17-03-18-20mm3s.csv
+    """.split()
+    file = files[-4]
+    generate_spectrogram(f"./data/{file.strip()}")
+
+
 if __name__ == "__main__":
-    main()
+    process_stuff()
