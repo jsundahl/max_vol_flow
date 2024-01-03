@@ -119,6 +119,30 @@ def generate_spectrogram(file_path):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
+
+def contains_extruder_click(file_path):
+    """
+    Determine if the accelerometer data contains an extruder click.
+
+    @param file_path - The path to the accelerometer data file
+
+    @return True if the accelerometer data contains an extruder click, False otherwise.
+    """
+    data = np.genfromtxt(file_path, delimiter=',', skip_header=1)
+    avg_accel = np.mean(data[:, 1:4], axis=1)
+
+    # the first second is just background noise, so we can use that to determine
+    # a threshold for what is a click and what is not.
+    sample_hz = int(1 / (data[1, 0] - data[0, 0]))
+    first_second_data = avg_accel[:sample_hz]
+    mean = np.mean(first_second_data)
+    std_dev = np.std(first_second_data)
+    # use a crazy high z score to avoid false positives
+    upper_bound = mean + 10 * std_dev
+
+    return np.any(avg_accel[sample_hz:] > upper_bound)
+
+
 def runtest():
     # home, move extruder carriage to back left
     # _run_gcode("G28\nG90\nG1 X15 Y200 F2000")
@@ -155,8 +179,11 @@ def process_stuff():
     adxl345-2024-01-02-17-02-59-20mm3s.csv
     adxl345-2024-01-02-17-03-18-20mm3s.csv
     """.split()
-    file = files[-4]
-    generate_spectrogram(f"./data/{file.strip()}")
+    files = [f.strip() for f in files]
+    file = files[-1]
+    # generate_spectrogram(f"./data/{file}")
+    for file in files:
+       print(f"{file} has click: {contains_extruder_click(f'./data/{file}')}")
 
 
 if __name__ == "__main__":
