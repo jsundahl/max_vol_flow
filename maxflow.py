@@ -126,12 +126,11 @@ def extruder_at_temp(temp):
         _run_gcode("M109 S0")
 
 
-# TODO: test with fan at 100%
-def run_test(start_flow, temp, length, max_flow):
+def run_test(min_flow, temp, length, max_flow):
     """
     Run a flow test on the printer.
 
-    @param start_flow - The starting flow rate to extrude at in mm^3/s.
+    @param min_flow - The minimum flow rate to extrude at in mm^3/s.
     @param temp - The temperature to extrude at.
     @param length - The length of filament to extrude.
     @param max_flow - The maximum flow rate to extrude at in mm^3/s.
@@ -150,7 +149,7 @@ def run_test(start_flow, temp, length, max_flow):
     )
 
     with extruder_at_temp(temp):
-        low = start_flow
+        low = min_flow
         high = max_flow
         click_flow = None
 
@@ -181,8 +180,8 @@ def run_test(start_flow, temp, length, max_flow):
 
 
 class CLIArgs:
-    def __init__(self, start_flow, temp, length, max_flow):
-        self.start_flow = start_flow
+    def __init__(self, min_flow, temp, length, max_flow):
+        self.min_flow = min_flow
         self.temp = temp
         self.length = length
         self.max_flow = max_flow
@@ -191,10 +190,10 @@ class CLIArgs:
     def from_argv(cls):
         parser = argparse.ArgumentParser(description="Run a flow test on the printer.")
         parser.add_argument(
-            "--start-flow",
+            "--min-flow",
             type=int,
             default=5,
-            help="The starting flow rate to extrude at in mm^3/s.",
+            help="The minimum flow rate to extrude at in mm^3/s.",
         )
         parser.add_argument(
             "--temp", type=int, required=True, help="The temperature to extrude at."
@@ -214,13 +213,13 @@ class CLIArgs:
 
         args = parser.parse_args()
 
-        return cls(args.start_flow, args.temp, args.length, args.max_flow)
+        return cls(args.minimum_flow, args.temp, args.length, args.max_flow)
 
 
 if __name__ == "__main__":
     args = CLIArgs.from_argv()
     run_test(
-        start_flow=args.start_flow,
+        min_flow=args.min_flow,
         temp=args.temp,
         length=args.length,
         max_flow=args.max_flow,
