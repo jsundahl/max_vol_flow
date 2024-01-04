@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+import argparse
 import contextlib
 import datetime
 
@@ -177,6 +180,48 @@ def run_test(start_flow, temp, length, max_flow):
             print(f"No extruder click detected. Stopped at {max_flow} mm^3/s.")
 
 
+class CLIArgs:
+    def __init__(self, start_flow, temp, length, max_flow):
+        self.start_flow = start_flow
+        self.temp = temp
+        self.length = length
+        self.max_flow = max_flow
+
+    @classmethod
+    def from_argv(cls):
+        parser = argparse.ArgumentParser(description="Run a flow test on the printer.")
+        parser.add_argument(
+            "--start-flow",
+            type=int,
+            default=5,
+            help="The starting flow rate to extrude at in mm^3/s.",
+        )
+        parser.add_argument(
+            "--temp", type=int, required=True, help="The temperature to extrude at."
+        )
+        parser.add_argument(
+            "--length",
+            type=int,
+            default=50,
+            help="The length of filament to extrude in mm.",
+        )
+        parser.add_argument(
+            "--max-flow",
+            type=int,
+            default=30,
+            help="The maximum flow rate to extrude at in mm^3/s.",
+        )
+
+        args = parser.parse_args()
+
+        return cls(args.start_flow, args.temp, args.length, args.max_flow)
+
+
 if __name__ == "__main__":
-    # run_test()
-    pass
+    args = CLIArgs.from_argv()
+    run_test(
+        start_flow=args.start_flow,
+        temp=args.temp,
+        length=args.length,
+        max_flow=args.max_flow,
+    )
