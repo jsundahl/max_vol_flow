@@ -1,10 +1,9 @@
-import csv
 import datetime
 
-import matplotlib.pyplot as plt
-import numpy as np 
+import numpy as np
 import requests
-import scipy.signal
+
+# TODO: pull out constants
 
 
 class GCodeError(Exception):
@@ -21,8 +20,7 @@ class GCodeError(Exception):
 
 
 def _run_gcode(gcode):
-    # host = "http://localhost:7125/printer/gcode/script"
-    host = "http://printy.local:7125/printer/gcode/script"
+    host = "http://localhost:7125/printer/gcode/script"
     response = requests.post(host, json={"script": gcode})
 
     if response.status_code != 200:
@@ -40,9 +38,8 @@ def flow_test(volumetric_rate, temp, length):
     @return The path to the accelerometer data file
     """
 
-    # Convert the volumetric rate to a linear rate
     linear_rate = volumetric_rate * 60 / (3.14159 * 1.75**2 / 4)
-  
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     accel_name = f"{timestamp}-{volumetric_rate}mm3s"
     accel_filename = f"/tmp/adxl345-{accel_name}.csv"
@@ -54,7 +51,7 @@ def flow_test(volumetric_rate, temp, length):
 
         ; movement to absolute
         G90
-        ; move right above build plate
+        ; move near build plate
         ; TODO: make movement xy depend on rate? to avoid conflicts
         G1 Z5 F300
 
@@ -66,8 +63,7 @@ def flow_test(volumetric_rate, temp, length):
 
         ; extruder movement to relative
         M83
-        ; Extrude at rate X for time t while moving up 5mm
-        ; TODO: will I get better measurements with a different or no z speed?
+        ; Extrude
         G1 E{length} F{linear_rate}
 
         ; Stop accelerometer measurement
@@ -77,47 +73,14 @@ def flow_test(volumetric_rate, temp, length):
         G1 E-1 F1800
  
         ; move back up 10mm
+        G91
         G1 Z10 F300
+        G90
         """
- 
+
     _run_gcode(cmd)
 
     return accel_filename
-
-# TODO: there's for sure going to be a discrepancy between this and your
-# in-practice max flow since you can reach a peak for a short time and
-# be fine, but you couldn't sustain say 18mm^3/s for more than 1 second.
-# this might be able to be picked up by a slicer to really know the limits
-# of max flow. There's also probably an equation that we're fitting to for
-# this and if I can figure out what it is then it will be cash money.
-
-
-def generate_spectrogram(file_path):
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
-
-    def normalize_data(Sxx):
-        Sxx_min = np.min(Sxx)
-        Sxx_max = np.max(Sxx)
-        return (Sxx - Sxx_min) / (Sxx_max - Sxx_min)
-
-    data = np.genfromtxt(file_path, delimiter=',', skip_header=1)
-    fs = 3125
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-    mmcubed = file_path.split('-')[-1][:-8]
-
-    for idx, axis in enumerate(['X', 'Y', 'Z']):
-        frequencies, times, Sxx = scipy.signal.spectrogram(data[:, idx + 1], fs)
-        Sxx = normalize_data(Sxx)
-        Sxx = sigmoid(Sxx * 10)
-        axs[idx].pcolormesh(times, frequencies, Sxx, shading='gouraud')
-        axs[idx].set_ylabel('Frequency [Hz]')
-        axs[idx].set_title(f"{axis}-axis at {mmcubed} mm^3/s")
-
-    plt.xlabel('Time [sec]')
-    fig.colorbar(axs[0].collections[0], ax=axs, orientation='vertical', label='Intensity [dB]')
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
 
 
 def contains_extruder_click(file_path):
@@ -128,7 +91,7 @@ def contains_extruder_click(file_path):
 
     @return True if the accelerometer data contains an extruder click, False otherwise.
     """
-    data = np.genfromtxt(file_path, delimiter=',', skip_header=1)
+    data = np.genfromtxt(file_path, delimiter=",", skip_header=1)
     avg_accel = np.mean(data[:, 1:4], axis=1)
 
     # the first second is just background noise, so we can use that to determine
@@ -143,48 +106,45 @@ def contains_extruder_click(file_path):
     return np.any(avg_accel[sample_hz:] > upper_bound)
 
 
-def runtest():
-    # home, move extruder carriage to back left
-    # _run_gcode("G28\nG90\nG1 X15 Y200 F2000")
-    _run_gcode("G90\nG1 X15 Y200 F2000")
-    for flow in (5, 5, 5, 20, 20, 20):
-        file_path = flow_test(flow, 215, 50)
-        print(f"Accelerometer data saved to {file_path}")
-        # move right 10mm
-        _run_gcode("G91\nG1 X10 F2000\nG90")
+# TODO: something like binary search?
+# TODO: test with fan at 100%
+def run_test(start_flow, temp, length):
+    """
+    Run a flow test on the printer.
+
+    @param start_flow - The starting flow rate to extrude at in mm^3/s.
+    @param temp - The temperature to extrude at.
+    @param length - The length of filament to extrude.
+    """
+    max_pos_xy = [200, 200]
+    pos_xy = [20, 20]
+    _run_gcode(
+        f"""
+        ; home
+        G28
+        ; move to initial position
+        G90
+        G1 X{pos_xy[0]} Y{pos_xy[1]} F2000
+        """
+    )
+
+    for flow in range(start_flow, 999):
+        file_path = flow_test(volumetric_rate=flow, temp=temp, length=length)
+        if contains_extruder_click(file_path):
+            print(f"Extruder click detected at {flow} mm^3/s")
+            break
+
+        # move over 10mm, possibly up 10mm
+        if pos_xy[0] + 10 > max_pos_xy[0]:
+            pos_xy[1] += 10
+            pos_xy[0] = 20
+        _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F2000")
 
     # stop heating extruder
     _run_gcode("M109 S0")
     return
 
 
-def process_stuff():
-    files = """
-    adxl345-2024-01-02-17-00-29-5mm3s.csv
-    adxl345-2024-01-02-17-01-26-5mm3s.csv
-    adxl345-2024-01-02-17-02-04-5mm3s.csv
-    adxl345-2024-01-02-18-21-41-10mm3s.csv
-    adxl345-2024-01-02-18-22-48-10mm3s.csv
-    adxl345-2024-01-02-18-23-13-10mm3s.csv
-    adxl345-2024-01-02-18-25-03-11mm3s.csv
-    adxl345-2024-01-02-18-25-46-12mm3s.csv
-    adxl345-2024-01-02-18-26-09-13mm3s.csv
-    adxl345-2024-01-02-18-26-31-14mm3s.csv
-    adxl345-2024-01-02-18-26-52-15mm3s.csv
-    adxl345-2024-01-02-18-27-13-16mm3s.csv
-    adxl345-2024-01-02-18-27-33-17mm3s.csv
-    adxl345-2024-01-02-18-27-53-18mm3s.csv
-    adxl345-2024-01-02-18-28-12-19mm3s.csv
-    adxl345-2024-01-02-17-02-40-20mm3s.csv
-    adxl345-2024-01-02-17-02-59-20mm3s.csv
-    adxl345-2024-01-02-17-03-18-20mm3s.csv
-    """.split()
-    files = [f.strip() for f in files]
-    file = files[-1]
-    # generate_spectrogram(f"./data/{file}")
-    for file in files:
-       print(f"{file} has click: {contains_extruder_click(f'./data/{file}')}")
-
-
 if __name__ == "__main__":
-    process_stuff()
+    # run_test()
+    pass
