@@ -110,16 +110,18 @@ def contains_extruder_click(file_path):
 
 # TODO: something like binary search?
 # TODO: test with fan at 100%
-def run_test(start_flow, temp, length):
+def run_test(start_flow, temp, length, max_flow):
     """
     Run a flow test on the printer.
 
     @param start_flow - The starting flow rate to extrude at in mm^3/s.
     @param temp - The temperature to extrude at.
     @param length - The length of filament to extrude.
+    @param max_flow - The maximum flow rate to extrude at in mm^3/s.
     """
     max_pos_xy = [200, 200]
-    pos_xy = [20, 20]
+    original_pos_xy = [20, 20]
+    pos_xy = original_pos_xy.copy()
     _run_gcode(
         f"""
         ; home
@@ -130,7 +132,7 @@ def run_test(start_flow, temp, length):
         """
     )
 
-    for flow in range(start_flow, 999):
+    for flow in range(start_flow, max_flow + 1):
         file_path = flow_test(volumetric_rate=flow, temp=temp, length=length)
         if contains_extruder_click(file_path):
             print(f"Extruder click detected at {flow} mm^3/s")
@@ -139,8 +141,13 @@ def run_test(start_flow, temp, length):
         # move over 10mm, possibly up 10mm
         if pos_xy[0] + 10 > max_pos_xy[0]:
             pos_xy[1] += 10
-            pos_xy[0] = 20
+            if pos_xy[1] > max_pos_xy[1]:
+                raise RuntimeError("Y max exceeded, something is very wrong.")
+
+            pos_xy[0] = original_pos_xy[0]
         _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F{XY_TRAVEL_SPEED}")
+    else:
+        print(f"No extruder click detected. Stopped at {max_flow} mm^3/s.")
 
     # stop heating extruder
     _run_gcode("M109 S0")
