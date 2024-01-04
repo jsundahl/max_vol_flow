@@ -3,7 +3,9 @@ import datetime
 import numpy as np
 import requests
 
-# TODO: pull out constants
+XY_TRAVEL_SPEED = 6000
+Z_TRAVEL_SPEED = 600
+RETRACT_SPEED = 1800
 
 
 class GCodeError(Exception):
@@ -53,7 +55,7 @@ def flow_test(volumetric_rate, temp, length):
         G90
         ; move near build plate
         ; TODO: make movement xy depend on rate? to avoid conflicts
-        G1 Z5 F300
+        G1 Z5 F{Z_TRAVEL_SPEED}
 
         ; Start accelerometer measurement
         ACCELEROMETER_MEASURE NAME={accel_name}
@@ -70,11 +72,11 @@ def flow_test(volumetric_rate, temp, length):
         ACCELEROMETER_MEASURE NAME={accel_name}
 
         ; retract 1mm
-        G1 E-1 F1800
+        G1 E-1 F{RETRACT_SPEED}
  
         ; move back up 10mm
         G91
-        G1 Z10 F300
+        G1 Z10 F{Z_TRAVEL_SPEED}
         G90
         """
 
@@ -124,7 +126,7 @@ def run_test(start_flow, temp, length):
         G28
         ; move to initial position
         G90
-        G1 X{pos_xy[0]} Y{pos_xy[1]} F2000
+        G1 X{pos_xy[0]} Y{pos_xy[1]} F{XY_TRAVEL_SPEED}
         """
     )
 
@@ -138,7 +140,7 @@ def run_test(start_flow, temp, length):
         if pos_xy[0] + 10 > max_pos_xy[0]:
             pos_xy[1] += 10
             pos_xy[0] = 20
-        _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F2000")
+        _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F{XY_TRAVEL_SPEED}")
 
     # stop heating extruder
     _run_gcode("M109 S0")
