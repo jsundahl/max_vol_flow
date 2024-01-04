@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 
 import numpy as np
@@ -108,6 +109,20 @@ def contains_extruder_click(file_path):
     return np.any(avg_accel[sample_hz:] > upper_bound)
 
 
+@contextlib.contextmanager
+def extruder_at_temp(temp):
+    """
+    Context manager to ensure the extruder is at the correct temperature.
+
+    @param temp - The temperature to set.
+    """
+    try:
+        _run_gcode(f"M109 S{temp}")
+        yield
+    finally:
+        _run_gcode("M109 S0")
+
+
 # TODO: something like binary search?
 # TODO: test with fan at 100%
 def run_test(start_flow, temp, length, max_flow):
@@ -132,26 +147,23 @@ def run_test(start_flow, temp, length, max_flow):
         """
     )
 
-    for flow in range(start_flow, max_flow + 1):
-        file_path = flow_test(volumetric_rate=flow, temp=temp, length=length)
-        if contains_extruder_click(file_path):
-            print(f"Extruder click detected at {flow} mm^3/s")
-            break
+    with extruder_at_temp(temp):
+        for flow in range(start_flow, max_flow + 1):
+            file_path = flow_test(volumetric_rate=flow, temp=temp, length=length)
+            if contains_extruder_click(file_path):
+                print(f"Extruder click detected at {flow} mm^3/s")
+                break
 
-        # move over 10mm, possibly up 10mm
-        if pos_xy[0] + 10 > max_pos_xy[0]:
-            pos_xy[1] += 10
-            if pos_xy[1] > max_pos_xy[1]:
-                raise RuntimeError("Y max exceeded, something is very wrong.")
+            # move over 10mm, possibly up 10mm
+            if pos_xy[0] + 10 > max_pos_xy[0]:
+                pos_xy[1] += 10
+                if pos_xy[1] > max_pos_xy[1]:
+                    raise RuntimeError("Y max exceeded, something is very wrong.")
 
-            pos_xy[0] = original_pos_xy[0]
-        _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F{XY_TRAVEL_SPEED}")
-    else:
-        print(f"No extruder click detected. Stopped at {max_flow} mm^3/s.")
-
-    # stop heating extruder
-    _run_gcode("M109 S0")
-    return
+                pos_xy[0] = original_pos_xy[0]
+            _run_gcode(f"G1 X{pos_xy[0]} Y{pos_xy[1]} F{XY_TRAVEL_SPEED}")
+        else:
+            print(f"No extruder click detected. Stopped at {max_flow} mm^3/s.")
 
 
 if __name__ == "__main__":
