@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import datetime
+import time
 
 import numpy as np
 import requests
@@ -155,7 +156,10 @@ def run_test(min_flow, temp, length, max_flow):
 
         while low <= high:
             mid = (low + high) // 2
+            print(f"checking {mid} mm^3/s")
             file_path = flow_test(volumetric_rate=mid, temp=temp, length=length)
+            # wait for csv file to be fully written
+            time.sleep(5)
             if contains_extruder_click(file_path):
                 print(f"Extruder click detected at {mid} mm^3/s")
                 click_flow = mid
@@ -213,7 +217,7 @@ class CLIArgs:
 
         args = parser.parse_args()
 
-        return cls(args.minimum_flow, args.temp, args.length, args.max_flow)
+        return cls(args.min_flow, args.temp, args.length, args.max_flow)
 
 
 if __name__ == "__main__":
@@ -224,3 +228,4 @@ if __name__ == "__main__":
         length=args.length,
         max_flow=args.max_flow,
     )
+
