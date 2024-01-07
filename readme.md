@@ -10,7 +10,9 @@ high rates could cause issues.
 ## Overview
 This script conducts a volumetric flow rate test to identify the maximum
 volumetric flow your printer can achieve. This script works by extruding at a
-certain rate and using the accelerometer to check for extruder clicking.
+certain rate and using the accelerometer to check for extruder clicking. The
+rate to extrude at is determined by a binary search from the given min flow to
+the given max flow.
 
 ## Requirements
 - Python 3
